@@ -1,13 +1,16 @@
 import './style.css';
 import { solutions, makeRegions, conflicts, isSolved } from './puzzles.js';
+import { loadRemoteProgress, saveRemoteProgress } from './sync.js';
 
 const today = new Date();
+const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 const dayNumber = Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(2026, 0, 1)) / 86400000) + 1;
 const puzzleIndex = ((dayNumber % solutions.length) + solutions.length) % solutions.length;
 const solution = solutions[puzzleIndex];
 const regions = makeRegions(solution);
 const colors = ['coral', 'sky', 'mint', 'sun', 'lavender', 'rose', 'sand'];
-const key = `queens-${today.toISOString().slice(0, 10)}`;
+const dayKey = today.toISOString().slice(0, 10);
+const key = `queens-${dayKey}`;
 const saved = JSON.parse(localStorage.getItem(key) || 'null');
 let queens = saved?.queens || Array(7).fill(null);
 let crosses = new Set(saved?.crosses || []);
@@ -15,6 +18,8 @@ let elapsed = saved?.elapsed || 0;
 let running = !saved?.solved;
 let mistakes = 0;
 let selectedTool = 'queen';
+let syncTimer;
+let hydrating = true;
 
 document.querySelector('#app').innerHTML = `
   <main class="shell">
@@ -37,7 +42,7 @@ document.querySelector('#app').innerHTML = `
         <button id="hint"><span class="action-icon bulb">♢</span><small>ヒント</small></button>
       </div>
     </section>
-    <section class="next-card"><div class="calendar">${today.getDate()+1}<small>${today.toLocaleDateString('ja-JP',{weekday:'short'}).replace('曜日','')}</small></div><div><b>明日のパズル</b><p>あと <span id="countdown">--:--:--</span> で解放</p></div><span class="lock">⌁</span></section>
+    <section class="next-card"><div class="calendar">${tomorrow.getDate()}<small>${tomorrow.toLocaleDateString('ja-JP',{weekday:'short'}).replace('曜日','')}</small></div><div><b>明日のパズル</b><p>あと <span id="countdown">--:--:--</span> で解放</p></div><span class="lock">⌁</span></section>
     <p class="quote">ひと息ついて、じっくり考えよう。<br>答えはきっと見えてくる。</p>
   </main>
   <nav><button class="selected">♛<span>デイリー</span></button><button id="archive">▦<span>アーカイブ</span></button><button id="stats">▥<span>記録</span></button></nav>
@@ -59,7 +64,12 @@ function render() {
     cell.textContent = queens[r] === c ? '♛' : crosses.has(id) ? '×' : '';
     board.append(cell);
   }));
-  localStorage.setItem(key, JSON.stringify({ queens, crosses: [...crosses], elapsed, solved: !running && isSolved(queens, regions) }));
+  const progress = { queens, crosses: [...crosses], elapsed, solved: !running && isSolved(queens, regions) };
+  localStorage.setItem(key, JSON.stringify(progress));
+  if (!hydrating) {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => saveRemoteProgress(dayKey, progress).catch(() => {}), 600);
+  }
 }
 
 function tapCell(row, col) {
@@ -102,4 +112,13 @@ document.querySelector('#archive').onclick = () => showToast('アーカイブは
 document.querySelector('#stats').onclick = () => showToast(`連続 ${localStorage.getItem('streak') || 3}日 · 今日 ${formatTime(elapsed)}`);
 function showToast(message) { const toast = document.querySelector('#toast'); toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2600); }
 render();
+loadRemoteProgress(dayKey).then(({ progress }) => {
+  if (!progress || progress.updatedAt && saved?.updatedAt && progress.updatedAt <= saved.updatedAt) return;
+  queens = progress.queens;
+  crosses = new Set(progress.crosses);
+  elapsed = Math.max(elapsed, progress.elapsed);
+  running = !progress.solved;
+  render();
+  showToast('クラウドの続きから再開しました');
+}).catch(() => {}).finally(() => { hydrating = false; render(); });
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
