@@ -14,3 +14,9 @@ test('service worker precaches the browser modules required to boot', async () =
     assert.ok(serviceWorker.includes(`'${asset}'`), `${asset} should be precached`);
   }
 });
+
+test('Queens cell styling never transforms a crowned grid button', async () => {
+  const style = await readFile('src/style.css', 'utf8');
+  assert.doesNotMatch(style, /\.cell\.has-queen\{[^}]*animation/);
+  assert.doesNotMatch(style, /\.cell:active\{[^}]*transform/);
+});

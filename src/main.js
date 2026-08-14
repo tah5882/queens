@@ -13,6 +13,7 @@ let puzzleSeed = dayNumber * 101 + size;
 let queensGame, queens, crosses, sudokuGame, sudokuBoard, selectedCell;
 let elapsed = 0, running = true, syncTimer, hydrating = true;
 let queensPointer = null;
+let suppressQueensClick = false, queensClickSuppressionTimer;
 
 document.querySelector('#app').innerHTML = `
   <main class="shell">
@@ -101,8 +102,9 @@ function renderSudoku() {
 function switchMode(next) { mode = next; localStorage.setItem('queens-mode', mode); hydrating = false; mode === 'queens' ? startQueens() : startSudoku(); }
 board.addEventListener('click', event => {
   const cell = event.target.closest('button'); if (!cell || !running) return; const r = +cell.dataset.row, c = +cell.dataset.col;
-  if (mode !== 'sudoku') return;
-  if (!sudokuGame.puzzle[r][c]) { selectedCell=[r,c]; render(); }
+  if (mode === 'sudoku') { if (!sudokuGame.puzzle[r][c]) { selectedCell=[r,c]; render(); } return; }
+  if (suppressQueensClick) { suppressQueensClick = false; return; }
+  activateQueensCell(r, c);
 });
 document.querySelectorAll('[data-number]').forEach(button => button.onclick=()=>{if(!selectedCell||!running)return; sudokuBoard[selectedCell[0]][selectedCell[1]]=+button.dataset.number;render();if(sudokuComplete(sudokuBoard,sudokuGame.solution))win();});
 document.querySelectorAll('[data-mode],[data-nav]').forEach(button => button.onclick=()=>switchMode(button.dataset.mode||button.dataset.nav));
@@ -113,6 +115,16 @@ document.querySelector('#new-queens').onclick=newPuzzle; document.querySelector(
 function win(){running=false;localStorage.setItem('streak',Number(localStorage.getItem('streak')||3)+1);render();navigator.vibrate?.([40,40,80]);showToast(`クリア！ ${formatTime(elapsed)}`);}
 function queensState() { return { queens, crosses }; }
 function applyQueensState(next) { queens = next.queens; crosses = next.crosses; }
+function activateQueensCell(row, col) {
+  applyQueensState(cycleQueensCell(queensState(), row, col));
+  render();
+  if (isSolved(queens, queensGame.regions)) win();
+}
+function suppressFollowingQueensClick() {
+  suppressQueensClick = true;
+  clearTimeout(queensClickSuppressionTimer);
+  queensClickSuppressionTimer = setTimeout(() => { suppressQueensClick = false; }, 0);
+}
 function queensCellAtPoint(clientX, clientY) {
   const cell = document.elementFromPoint(clientX, clientY)?.closest('.cell');
   return cell && board.contains(cell) ? cell : null;
@@ -164,11 +176,10 @@ board.addEventListener('pointerup', event => {
   const cell = queensCellAtPoint(event.clientX, event.clientY);
   const dragging = queensPointer.dragging;
   clearQueensPointer(event, dragging);
+  suppressFollowingQueensClick();
   if (dragging) { event.preventDefault(); return; }
   if (!cell || !running) return;
-  applyQueensState(cycleQueensCell(queensState(), Number(cell.dataset.row), Number(cell.dataset.col)));
-  render();
-  if (isSolved(queens, queensGame.regions)) win();
+  activateQueensCell(Number(cell.dataset.row), Number(cell.dataset.col));
   event.preventDefault();
 });
 board.addEventListener('pointercancel', event => clearQueensPointer(event, true));
