@@ -1,0 +1,16 @@
+name = "queens"
+main = "worker/index.js"
+compatibility_date = "2026-08-14"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# `wrangler d1 create queens-db` の出力で、以下のコメントを置き換えてください。
+# D1なしでもデプロイでき、その場合は端末内に進捗を保存します。
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "queens-db"
+# database_id = "YOUR_DATABASE_ID"
+# migrations_dir = "migrations"

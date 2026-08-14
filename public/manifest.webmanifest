@@ -1,0 +1,10 @@
+{
+  "name": "Queens — Daily Puzzle",
+  "short_name": "Queens",
+  "description": "毎日ひとつ、ひらめきの時間。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ee",
+  "theme_color": "#f7f4ee",
+  "icons": [{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
