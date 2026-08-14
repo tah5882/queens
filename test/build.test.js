@@ -10,7 +10,7 @@ test('browser entrypoint loads CSS as a stylesheet, not a JavaScript import', as
 
 test('service worker precaches the browser modules required to boot', async () => {
   const serviceWorker = await readFile('public/sw.js', 'utf8');
-  for (const asset of ['/src/main.js', '/src/style.css', '/src/puzzles.js', '/src/sudoku.js', '/src/sync.js']) {
+  for (const asset of ['/src/main.js', '/src/style.css', '/src/puzzles.js', '/src/queens-interaction.js', '/src/sudoku.js', '/src/sync.js']) {
     assert.ok(serviceWorker.includes(`'${asset}'`), `${asset} should be precached`);
   }
 });
