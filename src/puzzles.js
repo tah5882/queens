@@ -1,11 +1,46 @@
-export const solutions = [
-  [1, 3, 5, 0, 2, 4, 6],
-  [2, 5, 1, 4, 0, 3, 6],
-  [0, 3, 6, 2, 5, 1, 4]
-];
+function random(seed = Date.now()) {
+  let value = seed >>> 0;
+  return () => {
+    value += 0x6D2B79F5;
+    let result = value;
+    result = Math.imul(result ^ result >>> 15, result | 1);
+    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
+    return ((result ^ result >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function shuffled(values, rng) {
+  const copy = [...values];
+  for (let index = copy.length - 1; index > 0; index--) {
+    const target = Math.floor(rng() * (index + 1));
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+  }
+  return copy;
+}
+
+export function generateQueens(size = 7, seed = Date.now()) {
+  if (!Number.isInteger(size) || size < 5 || size > 10) throw new RangeError('size must be between 5 and 10');
+  const rng = random(seed);
+  const solution = Array(size).fill(null);
+  const used = new Set();
+  function place(row) {
+    if (row === size) return true;
+    for (const col of shuffled(Array.from({ length: size }, (_, index) => index), rng)) {
+      if (used.has(col) || row > 0 && Math.abs(solution[row - 1] - col) === 1) continue;
+      solution[row] = col; used.add(col);
+      if (place(row + 1)) return true;
+      used.delete(col);
+    }
+    solution[row] = null;
+    return false;
+  }
+  if (!place(0)) throw new Error('unable to generate puzzle');
+  return { size, solution, regions: makeRegions(solution) };
+}
 
 export function makeRegions(solution) {
-  return Array.from({ length: 7 }, (_, row) => Array.from({ length: 7 }, (_, col) => {
+  const size = solution.length;
+  return Array.from({ length: size }, (_, row) => Array.from({ length: size }, (_, col) => {
     let best = 0;
     let distance = Infinity;
     solution.forEach((queenCol, region) => {

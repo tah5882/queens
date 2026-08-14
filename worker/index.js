@@ -27,8 +27,8 @@ async function getProgress(request, env) {
 async function putProgress(request, env) {
   const body = await request.json().catch(() => null);
   if (!body || !validId(body.deviceId) || !validDay(body.day)) return json({ error: 'invalid_request' }, 400);
-  const queensValid = Array.isArray(body.queens) && body.queens.length === 7 && body.queens.every(value => value === null || Number.isInteger(value) && value >= 0 && value < 7);
-  const crossesValid = Array.isArray(body.crosses) && body.crosses.length <= 49 && body.crosses.every(value => /^[0-6]-[0-6]$/.test(value));
+  const queensValid = Array.isArray(body.queens) && body.queens.length >= 5 && body.queens.length <= 9 && body.queens.every(value => value === null || Number.isInteger(value) && value >= 0 && value < body.queens.length);
+  const crossesValid = Array.isArray(body.crosses) && body.crosses.length <= 81 && body.crosses.every(value => /^[0-8]-[0-8]$/.test(value));
   if (!queensValid || !crossesValid || !Number.isInteger(body.elapsed) || body.elapsed < 0 || body.elapsed > 86400) return json({ error: 'invalid_progress' }, 400);
   if (!env.DB) return json({ storage: 'local', saved: false });
 
