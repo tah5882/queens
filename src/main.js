@@ -1,7 +1,7 @@
-import './style.css';
 import { generateQueens, conflicts, isSolved } from './puzzles.js';
 import { generateSudoku, sudokuComplete } from './sudoku.js';
 import { loadRemoteProgress, saveRemoteProgress } from './sync.js';
+import { cycleQueensCell, placeQueensCross, queensCellId } from './queens-interaction.js';
 
 const today = new Date();
 const dayKey = today.toISOString().slice(0, 10);
@@ -11,7 +11,9 @@ let mode = localStorage.getItem('queens-mode') || 'queens';
 let size = Number(localStorage.getItem('queens-size') || 7);
 let puzzleSeed = dayNumber * 101 + size;
 let queensGame, queens, crosses, sudokuGame, sudokuBoard, selectedCell;
-let elapsed = 0, running = true, selectedTool = 'queen', syncTimer, hydrating = true;
+let elapsed = 0, running = true, syncTimer, hydrating = true;
+let queensPointer = null;
+let suppressQueensClick = false, queensClickSuppressionTimer;
 
 document.querySelector('#app').innerHTML = `
   <main class="shell">
@@ -23,7 +25,7 @@ document.querySelector('#app').innerHTML = `
       <div id="queens-controls" class="size-controls"><span>盤面サイズ</span><div>${[5,6,7,8,9].map(value => `<button data-size="${value}">${value}</button>`).join('')}</div><button id="new-queens" class="shuffle">↻ 自動生成</button></div>
       <div id="board" class="board" role="grid"></div>
       <p class="status" id="status"></p>
-      <div id="queen-actions" class="actions"><button data-tool="cross"><span class="action-icon cross">×</span><small>マーク</small></button><button data-tool="queen" class="primary active"><span class="action-icon">♛</span><small>クイーン</small></button><button id="hint"><span class="action-icon bulb">♢</span><small>ヒント</small></button></div>
+      <div id="queen-actions" class="actions"><p class="queens-gesture">タップ：× → ♛ → 消す　｜　なぞる：×を連続配置</p><button id="hint"><span class="action-icon bulb">♢</span><small>ヒント</small></button></div>
       <div id="number-pad" class="number-pad hidden">${[1,2,3,4,5,6,7,8,9].map(n => `<button data-number="${n}">${n}</button>`).join('')}<button data-number="0">消す</button></div>
     </section>
     <button class="new-puzzle" id="new-puzzle">↻ 新しいパズルを作る</button>
@@ -83,6 +85,7 @@ function renderQueens() {
 }
 
 function renderSudoku() {
+  board.style.setProperty('--size', 9);
   sudokuBoard.forEach((row, r) => row.forEach((value, c) => {
     const cell = document.createElement('button'); const fixed = sudokuGame.puzzle[r][c] !== 0;
     cell.className = 'sudoku-cell'; cell.dataset.row = r; cell.dataset.col = c;
@@ -100,16 +103,86 @@ function switchMode(next) { mode = next; localStorage.setItem('queens-mode', mod
 board.addEventListener('click', event => {
   const cell = event.target.closest('button'); if (!cell || !running) return; const r = +cell.dataset.row, c = +cell.dataset.col;
   if (mode === 'sudoku') { if (!sudokuGame.puzzle[r][c]) { selectedCell=[r,c]; render(); } return; }
-  const id=`${r}-${c}`; if(selectedTool==='cross'){crosses.has(id)?crosses.delete(id):crosses.add(id);if(queens[r]===c)queens[r]=null;}else{queens[r]=queens[r]===c?null:c;crosses.delete(id);} render(); if(isSolved(queens,queensGame.regions)) win();
+  if (suppressQueensClick) { suppressQueensClick = false; return; }
+  activateQueensCell(r, c);
 });
 document.querySelectorAll('[data-number]').forEach(button => button.onclick=()=>{if(!selectedCell||!running)return; sudokuBoard[selectedCell[0]][selectedCell[1]]=+button.dataset.number;render();if(sudokuComplete(sudokuBoard,sudokuGame.solution))win();});
 document.querySelectorAll('[data-mode],[data-nav]').forEach(button => button.onclick=()=>switchMode(button.dataset.mode||button.dataset.nav));
 document.querySelectorAll('[data-size]').forEach(button => button.onclick=()=>{size=+button.dataset.size;localStorage.setItem('queens-size',size);startQueens();});
-document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>{selectedTool=button.dataset.tool;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b===button));});
 document.querySelector('#hint').onclick=()=>{const row=queensGame.solution.findIndex((col,r)=>queens[r]!==col);if(row>=0){queens[row]=queensGame.solution[row];render();}};
 function newPuzzle(){const seed=Date.now();mode==='queens'?startQueens(seed):startSudoku(seed);showToast('新しいパズルを作りました');}
 document.querySelector('#new-queens').onclick=newPuzzle; document.querySelector('#new-puzzle').onclick=newPuzzle;
 function win(){running=false;localStorage.setItem('streak',Number(localStorage.getItem('streak')||3)+1);render();navigator.vibrate?.([40,40,80]);showToast(`クリア！ ${formatTime(elapsed)}`);}
+function queensState() { return { queens, crosses }; }
+function applyQueensState(next) { queens = next.queens; crosses = next.crosses; }
+function activateQueensCell(row, col) {
+  applyQueensState(cycleQueensCell(queensState(), row, col));
+  render();
+  if (isSolved(queens, queensGame.regions)) win();
+}
+function suppressFollowingQueensClick() {
+  suppressQueensClick = true;
+  clearTimeout(queensClickSuppressionTimer);
+  queensClickSuppressionTimer = setTimeout(() => { suppressQueensClick = false; }, 0);
+}
+function queensCellAtPoint(clientX, clientY) {
+  const cell = document.elementFromPoint(clientX, clientY)?.closest('.cell');
+  return cell && board.contains(cell) ? cell : null;
+}
+function paintCross(cell) {
+  const row = Number(cell.dataset.row), col = Number(cell.dataset.col);
+  if (queens[row] !== col) {
+    cell.classList.add('has-cross');
+    cell.classList.remove('has-queen', 'error');
+    cell.textContent = '×';
+  }
+}
+function clearQueensPointer(event, shouldRender) {
+  if (!queensPointer || queensPointer.pointerId !== event.pointerId) return;
+  const wasDragging = queensPointer.dragging;
+  queensPointer = null;
+  if (board.hasPointerCapture?.(event.pointerId)) board.releasePointerCapture(event.pointerId);
+  if (wasDragging && shouldRender) render();
+}
+board.addEventListener('pointerdown', event => {
+  if (mode !== 'queens' || !running || event.button !== 0) return;
+  const cell = event.target.closest('.cell');
+  if (!cell || !board.contains(cell)) return;
+  queensPointer = { pointerId: event.pointerId, startId: queensCellId(+cell.dataset.row, +cell.dataset.col), visited: new Set(), dragging: false };
+  board.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+});
+board.addEventListener('pointermove', event => {
+  if (!queensPointer || queensPointer.pointerId !== event.pointerId || mode !== 'queens' || !running) return;
+  const cell = queensCellAtPoint(event.clientX, event.clientY);
+  if (!cell) return;
+  const row = Number(cell.dataset.row), col = Number(cell.dataset.col), id = queensCellId(row, col);
+  if (!queensPointer.dragging && id === queensPointer.startId) return;
+  queensPointer.dragging = true;
+  const [startRow, startCol] = queensPointer.startId.split('-').map(Number);
+  const start = board.querySelector(`[data-row="${startRow}"][data-col="${startCol}"]`);
+  if (start && !queensPointer.visited.has(queensPointer.startId)) {
+    applyQueensState(placeQueensCross(queensState(), startRow, startCol));
+    queensPointer.visited.add(queensPointer.startId); paintCross(start);
+  }
+  if (!queensPointer.visited.has(id)) {
+    applyQueensState(placeQueensCross(queensState(), row, col));
+    queensPointer.visited.add(id); paintCross(cell);
+  }
+  event.preventDefault();
+});
+board.addEventListener('pointerup', event => {
+  if (!queensPointer || queensPointer.pointerId !== event.pointerId) return;
+  const cell = queensCellAtPoint(event.clientX, event.clientY);
+  const dragging = queensPointer.dragging;
+  clearQueensPointer(event, dragging);
+  suppressFollowingQueensClick();
+  if (dragging) { event.preventDefault(); return; }
+  if (!cell || !running) return;
+  activateQueensCell(Number(cell.dataset.row), Number(cell.dataset.col));
+  event.preventDefault();
+});
+board.addEventListener('pointercancel', event => clearQueensPointer(event, true));
 function formatTime(seconds){return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
 setInterval(()=>{if(running)elapsed++;document.querySelector('#timer').textContent=formatTime(elapsed);},1000);
 const modal=document.querySelector('#modal');function toggleModal(show){document.querySelector('#help-copy').innerHTML=mode==='queens'?'<p>行・列・色ごとにクイーンを1つ置きます。クイーン同士は斜めに隣接できません。</p>':'<p>各行・列・3×3のブロックに、1〜9を重複しないように入れます。</p>';modal.classList.toggle('hidden',!show);}document.querySelector('#help').onclick=()=>toggleModal(true);document.querySelector('#menu').onclick=()=>toggleModal(true);document.querySelector('.modal-close').onclick=document.querySelector('.modal-ok').onclick=()=>toggleModal(false);
